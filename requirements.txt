@@ -1,0 +1,8 @@
+# Part 1 — scraper.py
+requests==2.33.1
+beautifulsoup4==4.14.3
+
+# Part 2 — analysis.py
+pandas==3.0.2
+numpy==2.4.4
+matplotlib==3.10.8

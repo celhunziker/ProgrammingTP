@@ -1,0 +1,27 @@
+# Virtual environment (each person recreates with: python -m venv venv && pip install -r requirements.txt)
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Optional: secrets (if you ever add API keys)
+.env
+.env.local
