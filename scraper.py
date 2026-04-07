@@ -29,6 +29,7 @@ Usage:
 """
 
 import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
@@ -48,7 +49,7 @@ GENRES = {
     "comedy":   "ranking_comedy",
     "thriller": "ranking_thriller",
     "sci_fi":   "ranking_scifi",
-    "horror":   "ranking_horror",
+    "horror":   "ranking_horror"
 }
 
 MAX_MOVIES_PER_GENRE = 30
@@ -157,9 +158,15 @@ def extract_movie(item, rank, genre_name):
 
         # ── CAST ─────────────────────────────────────────────────────
         cast = ""
+        actor_links = {}
         cast_elems = item.select('.mc-cast a')
         if cast_elems:
             cast = ", ".join([clean_text(a.get_text()) for a in cast_elems])
+            for a in cast_elems:
+                name = clean_text(a.get_text())
+                href = a.get('href', '')
+                if href:
+                    actor_links[name] = href if href.startswith('http') else BASE_URL + href
 
         # ── RATING ───────────────────────────────────────────────────
         # <div class="avg">8.6</div> inside .fa-avg-rat-box
@@ -180,7 +187,7 @@ def extract_movie(item, rank, genre_name):
             "director": director, "cast": cast, "country": country,
             "rating": rating, "votes": votes,
             "genre": genre_name, "url": movie_url,
-        }
+        }, actor_links
 
     except Exception as e:
         print(f"    WARNING at rank #{rank}: {e}")
@@ -202,6 +209,7 @@ def scrape_genre(session, genre_name, ranking_id):
     print(f"{'─' * 60}")
 
     movies = []
+    genre_actors = {}
 
     try:
         response = session.get(url, timeout=20)
@@ -224,9 +232,11 @@ def scrape_genre(session, genre_name, ranking_id):
         items = items[:MAX_MOVIES_PER_GENRE]
 
         for rank, item in enumerate(items, 1):
-            movie = extract_movie(item, rank, genre_name)
-            if movie:
+            extracted = extract_movie(item, rank, genre_name)
+            if extracted:
+                movie, actors = extracted
                 movies.append(movie)
+                genre_actors.update(actors)
                 if rank <= 3:
                     print(f"    #{rank} {movie['title']} ({movie['year']}) "
                           f"R:{movie['rating']}  V:{movie['votes']}")
@@ -242,7 +252,72 @@ def scrape_genre(session, genre_name, ranking_id):
     except Exception as e:
         print(f"  ERROR: {e}")
 
-    return movies
+    return movies, genre_actors
+
+
+# =============================================================================
+# ACTOR EXTRACTION
+# =============================================================================
+
+def scrape_actors(session, actor_links):
+    """
+    Given a dict of {name: url}, scrapes each URL to extract the nationality.
+    Saves the result to data/actores.csv.
+    """
+    print("\n" + "=" * 60)
+    print("  SCRAPING ACTOR PROFILES")
+    print("=" * 60)
+    print(f"  Total unique actors to scrape: {len(actor_links)}")
+    
+    actors_data = []
+    
+    for i, (name, url) in enumerate(actor_links.items(), 1):
+        nationality = "Unknown"
+        try:
+            time.sleep(REQUEST_DELAY * 0.3) # Slight delay to not overwhelm the server
+            response = session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                nat_img = soup.select_one('.nacionality img.nflag')
+                if nat_img:
+                    nationality = nat_img.get('alt', 'Unknown').strip()
+                
+                if nationality == "Unknown":
+                    # Fallback: Extraer desde la fecha/lugar de Nacimiento
+                    for strong in soup.find_all('strong'):
+                        text_strong = strong.get_text(strip=True)
+                        if 'Born' in text_strong:
+                            next_div = strong.find_next_sibling('div')
+                            if next_div:
+                                birth_txt = next_div.get_text(strip=True)
+                                # Eliminar contenido entre paréntesis como "(81 years old)"
+                                birth_txt = re.sub(r'\s*\([^)]*\)', '', birth_txt).strip()
+                                if ',' in birth_txt:
+                                    nationality = birth_txt.split(',')[-1].strip()
+                                    # Limpiar especificaciones históricas/políticas (ej: "Germany - East Germany")
+                                    if '-' in nationality:
+                                        nationality = nationality.split('-')[0].strip()
+                            break
+                
+                if not nationality:
+                    nationality = "Unknown"
+            
+            # Show progress every 20 actors
+            if i % 20 == 0 or i == len(actor_links):
+                print(f"    [{i}/{len(actor_links)}] Fetched {name} -> {nationality}")
+                
+        except Exception as e:
+            print(f"  ERROR fetching profile for {name}: {e}")
+            
+        actors_data.append({"actor": name, "nationality": nationality})
+        
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    path = os.path.join(OUTPUT_DIR, "actores.csv")
+    if actors_data:
+        pd.DataFrame(actors_data).to_csv(path, index=False, encoding='utf-8-sig')
+        print(f"\n  ✓ SAVED: {path} ({len(actors_data)} actors)")
+    
+    return path
 
 
 # =============================================================================
@@ -298,7 +373,8 @@ def main():
     print("  Programming for Data Science - Final Project")
     print("=" * 60)
 
-    session = requests.Session()
+    #session = requests.Session()
+    session = cloudscraper.create_scraper()
     session.headers.update(HEADERS)
 
     print("\n  Loading cookies from main page...")
@@ -312,13 +388,19 @@ def main():
 
     all_csv_paths = []
     total_movies = 0
+    all_actor_links = {}
 
     for genre_name, ranking_id in GENRES.items():
-        movies = scrape_genre(session, genre_name, ranking_id)
+        movies, genre_actors = scrape_genre(session, genre_name, ranking_id)
+        all_actor_links.update(genre_actors)
         path = save_csv(movies, genre_name)
         all_csv_paths.append(path)
         total_movies += len(movies)
         time.sleep(REQUEST_DELAY)
+
+    # Launch actor biographical scraping
+    actors_csv = scrape_actors(session, all_actor_links)
+    all_csv_paths.append(actors_csv)
 
     print("\n" + "=" * 60)
     print("  SUMMARY")

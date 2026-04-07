@@ -17,6 +17,8 @@ Description:
           distributed across decades?
       Q3: Which directors dominate top-rated lists? Are they genre
           specialists or versatile across genres?
+      Q4: Who are the actors that appear most frequently in top-rated movies? 
+          Which are the most common nationalities?
 
     Course techniques used:
       - pd.concat           (04_data_wrangling: Concatenating Data Sets)
@@ -521,6 +523,90 @@ def create_q3_figure(df, director_genre_ct):
     
     return fig
 
+def create_q4_figure(df):
+    """
+    Q4: Who are the actors that appear most frequently in top-rated movies?
+    Plot: Horizontal bar chart of top 15 actors and their nationalities.
+    """
+    print("  Generating Q4 Plotly figure...")
+    
+    cast_df = df[df['cast'] != 'Unknown'].copy()
+    
+    # Split cast by comma and explode into individual rows per actor
+    cast_df['actor'] = cast_df['cast'].str.split(', ')
+    actors_exploded = cast_df.explode('actor')
+    
+    # Clean up any potential empty strings
+    actors_exploded = actors_exploded[actors_exploded['actor'].str.strip() != '']
+    
+    # Get all actors
+    all_actors_counts = actors_exploded['actor'].value_counts().reset_index()
+    all_actors_counts.columns = ['actor', 'count']
+    
+    # Load actores.csv
+    try:
+        actors_df = pd.read_csv('data/actores.csv')
+        all_actors_counts = all_actors_counts.merge(actors_df, on='actor', how='left')
+        all_actors_counts['nationality'] = all_actors_counts['nationality'].fillna("Unknown")
+        all_actors_counts['nationality_display'] = all_actors_counts['nationality'].apply(lambda x: x if len(x)<25 else x[:22]+"...")
+    except:
+        all_actors_counts['nationality'] = 'Unknown'
+        all_actors_counts['nationality_display'] = 'Unknown'
+        
+    actor_counts_top15 = all_actors_counts.head(15).copy()
+    actor_counts_top15 = actor_counts_top15.sort_values('count') # Ascending for horizontal bar
+    
+    fig = make_subplots(rows=1, cols=2, specs=[[{"type": "bar"}, {"type": "bar"}]],
+                        subplot_titles=('Top 15 Actors', 'Top 5 Nationalities of All Actors'))
+    
+    # Plot A: Bar chart
+    fig.add_trace(
+        go.Bar(
+            x=actor_counts_top15['count'],
+            y=actor_counts_top15['actor'],
+            orientation='h',
+            marker=dict(
+                color=actor_counts_top15['count'],
+                colorscale='Sunset',
+            ),
+            text=actor_counts_top15['nationality_display'],
+            hovertemplate="Actor: %{y}<br>Appearances: %{x}<br>Nat: %{text}<extra></extra>"
+        ),
+        row=1, col=1
+    )
+    
+    # Plot B: Vertical Bar chart for Top 5 nationalities of all actors, excluding 'Unknown'
+    nat_counts = all_actors_counts[all_actors_counts['nationality'] != 'Unknown']['nationality'].value_counts().reset_index()
+    nat_counts.columns = ['nationality', 'count']
+    nat_counts = nat_counts.head(5)
+    
+    fig.add_trace(
+        go.Bar(
+            x=nat_counts['nationality'],
+            y=nat_counts['count'],
+            marker=dict(
+                color=nat_counts['count'],
+                colorscale='Viridis',
+            ),
+            text=nat_counts['count'],
+            textposition='outside',
+            hovertemplate="Nationality: %{x}<br>Total Actors: %{y}<extra></extra>"
+        ),
+        row=1, col=2
+    )
+
+    fig.update_layout(
+        template='plotly_dark',
+        height=650,
+        showlegend=False,
+        title_text="Top Actors in Highly-Rated Movies & Their Origin"
+    )
+    
+    fig.update_xaxes(title_text="Appearances", row=1, col=1)
+    fig.update_yaxes(title_text="Total Unique Actors", row=1, col=2)
+    
+    return fig
+
 def create_data_table(df):
     """
     Exploratory Data Table
@@ -555,7 +641,7 @@ def create_data_table(df):
     
     return fig
 
-def save_static_figs(fig_q1, fig_q2, fig_q3, output_dir):
+def save_static_figs(fig_q1, fig_q2, fig_q3, fig_q4, output_dir):
     """Saves static PNG representations for fallback/reports."""
     print("\n" + "=" * 70)
     print("SAVING STATIC BACKUPS (PNG)")
@@ -564,7 +650,8 @@ def save_static_figs(fig_q1, fig_q2, fig_q3, output_dir):
     fig_q1.write_image(os.path.join(output_dir, "Q1_genre_ratings.png"), width=1400, height=700, scale=1.5)
     fig_q2.write_image(os.path.join(output_dir, "Q2_golden_era.png"), width=1400, height=700, scale=1.5)
     fig_q3.write_image(os.path.join(output_dir, "Q3_directors.png"), width=1400, height=700, scale=1.5)
-    print("  ✓ Q1, Q2, and Q3 plots saved as PNG in 'plots/' folder.")
+    fig_q4.write_image(os.path.join(output_dir, "Q4_actors.png"), width=1400, height=700, scale=1.5)
+    print("  ✓ Q1, Q2, Q3, Q4  plots saved as PNG in 'plots/' folder.")
 
 def create_dashboard(df, genre_stats, decade_stats, director_genre_ct, output_dir):
     """
@@ -577,6 +664,7 @@ def create_dashboard(df, genre_stats, decade_stats, director_genre_ct, output_di
     fig_q1 = create_q1_figure(df, genre_stats)
     fig_q2 = create_q2_figure(df, decade_stats)
     fig_q3 = create_q3_figure(df, director_genre_ct)
+    fig_q4 = create_q4_figure(df)
     fig_table = create_data_table(df)
     
     # HTML generation (Prohibited to touch logic)
@@ -586,6 +674,7 @@ def create_dashboard(df, genre_stats, decade_stats, director_genre_ct, output_di
     html_q1 = fig_q1.to_html(full_html=False, include_plotlyjs='cdn')
     html_q2 = fig_q2.to_html(full_html=False, include_plotlyjs=False)
     html_q3 = fig_q3.to_html(full_html=False, include_plotlyjs=False)
+    html_q4 = fig_q4.to_html(full_html=False, include_plotlyjs=False)
     html_table = fig_table.to_html(full_html=False, include_plotlyjs=False)
     
     html_template = f"""
@@ -639,6 +728,7 @@ def create_dashboard(df, genre_stats, decade_stats, director_genre_ct, output_di
             <button class="tab-btn active" onclick="openTab(event, 'Q1')">Q1: Genre Ratings</button>
             <button class="tab-btn" onclick="openTab(event, 'Q2')">Q2: Golden Era</button>
             <button class="tab-btn" onclick="openTab(event, 'Q3')">Q3: Director Dominance</button>
+            <button class="tab-btn" onclick="openTab(event, 'Q4')">Q4: Top Actors</button>
             <button class="tab-btn" onclick="openTab(event, 'Explorer')">Data Explorer</button>
         </div>
 
@@ -650,6 +740,9 @@ def create_dashboard(df, genre_stats, decade_stats, director_genre_ct, output_di
         </div>
         <div id="Q3" class="tab-content">
             {html_q3}
+        </div>
+        <div id="Q4" class="tab-content">
+            {html_q4}
         </div>
         <div id="Explorer" class="tab-content">
             {html_table}
@@ -718,7 +811,8 @@ def main():
     fig_q1 = create_q1_figure(df, genre_stats)
     fig_q2 = create_q2_figure(df, decade_stats)
     fig_q3 = create_q3_figure(df, director_genre_ct)
-    save_static_figs(fig_q1, fig_q2, fig_q3, OUTPUT_DIR)
+    fig_q4 = create_q4_figure(df)
+    save_static_figs(fig_q1, fig_q2, fig_q3, fig_q4, OUTPUT_DIR)
 
     # --- Final summary ---
     print("\n" + "=" * 70)
