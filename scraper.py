@@ -274,7 +274,7 @@ def scrape_actors(session, actor_links):
     for i, (name, url) in enumerate(actor_links.items(), 1):
         nationality = "Unknown"
         try:
-            time.sleep(REQUEST_DELAY * 0.3) # Slight delay to not overwhelm the server
+            #time.sleep(REQUEST_DELAY) # Slight delay to not overwhelm the server
             response = session.get(url, timeout=15)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
