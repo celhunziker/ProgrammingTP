@@ -1,7 +1,7 @@
 # Part 1 — scraper.py
 requests==2.33.1
 beautifulsoup4==4.14.3
-cloudscraper==1.2.3
+cloudscraper==1.2.71
 
 # Part 2 — analysis.py
 pandas==3.0.2
